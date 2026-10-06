@@ -1,0 +1,109 @@
+name: Vérification des liens
+
+on:
+  schedule:
+    - cron: '0 6,7 * * 1'
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Adresse à vérifier (optionnel, par défaut le site GitHub Pages)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  liens:
+    name: Contrôler les liens du site
+    runs-on: ubuntu-latest
+
+    steps:
+      # Vérifie l'heure de Paris pour exécuter le contrôle uniquement à 8h le lundi malgré le changement d'heure UTC.
+      - name: Vérifier la fenêtre horaire (Europe/Paris)
+        id: fenetre
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "run_check=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          paris_hour="$(TZ=Europe/Paris date '+%H')"
+          if [ "$paris_hour" = "08" ]; then
+            echo "run_check=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_check=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Définit l'adresse à scanner, personnalisable lors d'un lancement manuel.
+      - name: Définir l'adresse à vérifier
+        if: steps.fenetre.outputs.run_check == 'true'
+        id: cible
+        run: |
+          url="${{ inputs.url }}"
+          if [ -z "$url" ]; then
+            url="https://maevamaignann.github.io/form-validator4/"
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      # Lance lychee pour analyser tous les liens accessibles depuis la page cible.
+      - name: Vérifier les liens avec lychee
+        if: steps.fenetre.outputs.run_check == 'true'
+        id: lychee
+        uses: lycheeverse/lychee-action@v2
+        continue-on-error: true
+        with:
+          args: >-
+            --verbose
+            --no-progress
+            --format markdown
+            --output ./lychee-report.md
+            --crawl
+            ${{ steps.cible.outputs.url }}
+
+      # Détermine si des liens cassés ont été détectés et prépare les métadonnées de rapport.
+      - name: Préparer le résultat
+        if: steps.fenetre.outputs.run_check == 'true'
+        id: resultat
+        run: |
+          if [ "${{ steps.lychee.outcome }}" = "failure" ]; then
+            echo "has_broken_links=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_broken_links=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "checked_at=$(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_OUTPUT"
+
+      # Ouvre une issue qui liste les liens cassés trouvés par lychee.
+      - name: Ouvrir une issue pour les liens cassés
+        if: steps.resultat.outputs.has_broken_links == 'true'
+        uses: actions/github-script@v7
+        env:
+          TARGET_URL: ${{ steps.cible.outputs.url }}
+          CHECKED_AT: ${{ steps.resultat.outputs.checked_at }}
+        with:
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const title = '🔗 Liens cassés détectés';
+            const reportPath = './lychee-report.md';
+            const report = fs.existsSync(reportPath)
+              ? fs.readFileSync(reportPath, 'utf8')
+              : 'Le rapport lychee est indisponible, mais des erreurs ont été signalées.';
+
+            await github.rest.issues.create({
+              owner,
+              repo,
+              title,
+              body: [
+                'Le contrôle hebdomadaire des liens a détecté des liens cassés.',
+                '',
+                `- **Adresse analysée** : ${process.env.TARGET_URL}`,
+                `- **Heure (UTC)** : ${process.env.CHECKED_AT}`,
+                '',
+                '### Rapport lychee',
+                report,
+                '',
+                '_Issue créée automatiquement par `.github/workflows/liens.yml`._'
+              ].join('\n')
+            });

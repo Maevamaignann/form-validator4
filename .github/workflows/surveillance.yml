@@ -1,0 +1,176 @@
+name: Surveillance de disponibilité
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Adresse du site à surveiller (optionnel, pour les tests)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  surveillance:
+    name: Vérifier la disponibilité du site
+    runs-on: ubuntu-latest
+
+    steps:
+      # Détermine l'adresse à tester (celle fournie manuellement ou l'URL GitHub Pages par défaut).
+      - name: Déterminer l'URL cible
+        id: cible
+        run: |
+          url="${{ inputs.url }}"
+          if [ -z "$url" ]; then
+            url="https://maevamaignann.github.io/form-validator4"
+          fi
+          echo "base_url=${url%/}" >> "$GITHUB_OUTPUT"
+
+      # Vérifie que la page d'accueil, le script et la feuille de style répondent bien avec un code HTTP 200.
+      - name: Vérifier les ressources critiques
+        id: verification
+        run: |
+          base_url="${{ steps.cible.outputs.base_url }}"
+          failures=()
+
+          for path in "/" "/script.js" "/style.css"; do
+            status="$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' "${base_url}${path}")"
+            if [ "$status" -ne 200 ]; then
+              failures+=("${path} (${status})")
+            fi
+          done
+
+          if [ "${#failures[@]}" -gt 0 ]; then
+            {
+              echo "has_incident=true"
+              echo "failed_markdown<<EOF"
+              for entry in "${failures[@]}"; do
+                echo "- ${entry}"
+              done
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "has_incident=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "checked_at=$(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_OUTPUT"
+
+      # S'assure que l'étiquette d'incident existe avant la création d'une issue.
+      - name: Préparer l'étiquette incident
+        if: steps.verification.outputs.has_incident == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: 'incident' });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name: 'incident',
+                color: 'D73A4A',
+                description: 'Incident de disponibilité du site'
+              });
+            }
+
+      # Ouvre une issue unique si le site est indisponible et qu'aucune issue incident équivalente n'est déjà ouverte.
+      - name: Ouvrir une issue d'incident si nécessaire
+        if: steps.verification.outputs.has_incident == 'true'
+        uses: actions/github-script@v7
+        env:
+          FAILED_MARKDOWN: ${{ steps.verification.outputs.failed_markdown }}
+          CHECKED_AT: ${{ steps.verification.outputs.checked_at }}
+          BASE_URL: ${{ steps.cible.outputs.base_url }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const title = '🚨 Site indisponible';
+
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: 'open',
+              labels: 'incident',
+              per_page: 100
+            });
+
+            const existing = openIssues.find((issue) => issue.title === title);
+            if (existing) {
+              core.info(`Issue déjà ouverte: #${existing.number}`);
+              return;
+            }
+
+            const failed = process.env.FAILED_MARKDOWN || '- Ressources indisponibles';
+            const checkedAt = process.env.CHECKED_AT;
+            const baseUrl = process.env.BASE_URL;
+
+            await github.rest.issues.create({
+              owner,
+              repo,
+              title,
+              labels: ['incident'],
+              body: [
+                'Le workflow de surveillance a détecté une indisponibilité du site.',
+                '',
+                `- **Adresse testée** : ${baseUrl}`,
+                `- **Heure (UTC)** : ${checkedAt}`,
+                '',
+                '### Fichiers en erreur',
+                failed,
+                '',
+                '_Issue créée automatiquement par `.github/workflows/surveillance.yml`._'
+              ].join('\n')
+            });
+
+      # Ferme automatiquement l'issue d'incident quand toutes les ressources répondent à nouveau correctement.
+      - name: Fermer l'issue d'incident si le site est rétabli
+        if: steps.verification.outputs.has_incident == 'false'
+        uses: actions/github-script@v7
+        env:
+          CHECKED_AT: ${{ steps.verification.outputs.checked_at }}
+          BASE_URL: ${{ steps.cible.outputs.base_url }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const title = '🚨 Site indisponible';
+
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: 'open',
+              labels: 'incident',
+              per_page: 100
+            });
+
+            const existing = openIssues.find((issue) => issue.title === title);
+            if (!existing) {
+              core.info('Aucune issue incident ouverte à fermer.');
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: existing.number,
+              body: [
+                '✅ Le site répond de nouveau correctement.',
+                '',
+                `- **Adresse testée** : ${process.env.BASE_URL}`,
+                `- **Heure (UTC)** : ${process.env.CHECKED_AT}`,
+                '',
+                '_Fermeture automatique par `.github/workflows/surveillance.yml`._'
+              ].join('\n')
+            });
+
+            await github.rest.issues.update({
+              owner,
+              repo,
+              issue_number: existing.number,
+              state: 'closed'
+            });
