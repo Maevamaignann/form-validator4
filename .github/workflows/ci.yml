@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  quality:
+    name: Qualité du code
+    runs-on: ubuntu-latest
+
+    steps:
+      # Récupère le code du dépôt pour exécuter les vérifications.
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      # Installe la version de Node.js utilisée pour les outils de qualité.
+      - name: Configurer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Installe les dépendances définies dans package-lock.json.
+      - name: Installer les dépendances
+        run: npm ci
+
+      # Vérifie la qualité du JavaScript, du CSS et du HTML.
+      - name: Lancer ESLint, Stylelint et HTMLHint
+        run: npm run lint
+
+  tests:
+    name: Tests automatisés
+    runs-on: ubuntu-latest
+
+    steps:
+      # Récupère le code du dépôt pour lancer les tests.
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      # Installe la version de Node.js nécessaire aux tests.
+      - name: Configurer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Installe les dépendances nécessaires au lanceur de tests.
+      - name: Installer les dépendances
+        run: npm ci
+
+      # Exécute les tests des fonctions de validation avec Node.js et jsdom.
+      - name: Lancer les tests
+        run: npm test
+
+  files:
+    name: Vérification des fichiers
+    runs-on: ubuntu-latest
+
+    steps:
+      # Récupère le code du dépôt pour vérifier la présence des fichiers.
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      # Confirme que les fichiers nécessaires au site statique existent.
+      - name: Vérifier les fichiers essentiels
+        run: |
+          test -f index.html
+          test -f style.css
+          test -f script.js
+          test -f readme.md
