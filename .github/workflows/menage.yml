@@ -1,0 +1,31 @@
+name: Ménage des issues inactives
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+
+permissions:
+  issues: write
+
+jobs:
+  nettoyage:
+    name: Marquer puis fermer les issues inactives
+    runs-on: ubuntu-latest
+
+    steps:
+      # Applique la politique d'inactivité: label après 30 jours, fermeture 7 jours plus tard, sans toucher aux incidents.
+      - name: Gérer les issues inactives
+        uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          only-issues: true
+          days-before-issue-stale: 30
+          days-before-issue-close: 7
+          stale-issue-label: inactive
+          exempt-issue-labels: incident
+          stale-issue-message: >-
+            Cette issue est marquée comme inactive car aucune activité n'a été détectée depuis 30 jours.
+            Sans nouvelle activité dans les 7 prochains jours, elle sera fermée automatiquement.
+          close-issue-message: >-
+            Cette issue est fermée automatiquement après 7 jours supplémentaires sans activité.
+            N'hésitez pas à la rouvrir si le sujet est toujours d'actualité.
