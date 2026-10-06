@@ -1,8 +1,8 @@
-const form = document.getElementById('form');
-const username = document.getElementById('username');
-const email = document.getElementById('email');
-const password = document.getElementById('password');
-const password2 = document.getElementById('password2');
+const form = typeof document !== 'undefined' ? document.getElementById('form') : null;
+const username = typeof document !== 'undefined' ? document.getElementById('username') : null;
+const email = typeof document !== 'undefined' ? document.getElementById('email') : null;
+const password = typeof document !== 'undefined' ? document.getElementById('password') : null;
+const password2 = typeof document !== 'undefined' ? document.getElementById('password2') : null;
 
 // Show input error message
 function showError(input, message) {
@@ -73,14 +73,27 @@ function getFieldName(input) {
 }
 
 // Event listeners
-form.addEventListener('submit', function(e) {
-  e.preventDefault();
+if (form && username && email && password && password2) {
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
 
-  if(checkRequired([username, email, password, password2])){
-    checkLength(username, 3, 15);
-    checkLength(password, 6, 25);
-    checkEmail(email);
-    checkPasswordsMatch(password, password2);
-  }
+    if (checkRequired([username, email, password, password2])) {
+      checkLength(username, 3, 15);
+      checkLength(password, 6, 25);
+      checkEmail(email);
+      checkPasswordsMatch(password, password2);
+    }
+  });
+}
 
-});
+if (typeof module !== 'undefined') {
+  module.exports = {
+    checkEmail,
+    checkLength,
+    checkPasswordsMatch,
+    checkRequired,
+    getFieldName,
+    showError,
+    showSuccess
+  };
+}

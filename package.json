@@ -1,0 +1,27 @@
+{
+  "name": "form-validator4",
+  "version": "1.0.0",
+  "description": "Simple client side form validation. Check required, length, email and password match",
+  "main": "script.js",
+  "scripts": {
+    "lint:js": "eslint script.js tests/**/*.js",
+    "lint:css": "stylelint \"**/*.css\"",
+    "lint:html": "htmlhint \"**/*.html\"",
+    "lint": "npm run lint:js && npm run lint:css && npm run lint:html",
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://localhost:26831/Maevamaignann/form-validator4"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "eslint": "^8.57.1",
+    "htmlhint": "^1.9.2",
+    "jsdom": "^30.1.2",
+    "stylelint": "^17.16.0",
+    "stylelint-config-standard": "^40.0.0"
+  }
+}

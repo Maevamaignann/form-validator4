@@ -1,0 +1,44 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    name: Publication GitHub Pages
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      # Récupère le code correspondant au commit validé par la CI.
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      # Active la configuration officielle de GitHub Pages.
+      - name: Configurer GitHub Pages
+        uses: actions/configure-pages@v5
+
+      # Prépare et envoie les fichiers statiques comme artefact de déploiement.
+      - name: Charger l'artefact du site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      # Déploie l'artefact vers GitHub Pages.
+      - name: Déployer le site
+        id: deployment
+        uses: actions/deploy-pages@v4
